@@ -6,13 +6,16 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  packages: write   # нужно для push в GHCR
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     env:
       REPO_LOWER: ${{ github.repository_owner }}/flask-pipeline-demo
+    outputs:
+      image_name: ${{ steps.vars.outputs.name }}
+      image_tag:  ${{ steps.vars.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,3 +38,23 @@ jobs:
         run: |
           docker push ghcr.io/${{ steps.vars.outputs.name }}:${{ steps.vars.outputs.tag }}
           docker push ghcr.io/${{ steps.vars.outputs.name }}:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Deploy over SSH to VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euxo pipefail
+            cd /opt/flask-pipeline-demo
+            # логинимся в GHCR встроенным токеном раннера
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker compose pull
+            docker compose up -d
+            docker image prune -f
