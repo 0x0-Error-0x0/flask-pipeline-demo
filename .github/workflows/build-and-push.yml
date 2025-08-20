@@ -1,0 +1,37 @@
+name: Build & Push Image (GHCR)
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      REPO_LOWER: ${{ github.repository_owner }}/flask-pipeline-demo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Normalize repo path (lowercase)
+        id: vars
+        run: |
+          echo "name=$(echo '${{ env.REPO_LOWER }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build image
+        run: |
+          docker build -t ghcr.io/${{ steps.vars.outputs.name }}:${{ steps.vars.outputs.tag }} \
+                       -t ghcr.io/${{ steps.vars.outputs.name }}:latest .
+
+      - name: Push image
+        run: |
+          docker push ghcr.io/${{ steps.vars.outputs.name }}:${{ steps.vars.outputs.tag }}
+          docker push ghcr.io/${{ steps.vars.outputs.name }}:latest
